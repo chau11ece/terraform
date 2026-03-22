@@ -1,0 +1,29 @@
+# Terraform state files
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+.terraform.tfstate.lock.info
+
+# Environment-specific variable files (contain secrets)
+environments/*/terraform.tfvars
+terraform.tfvars
+
+# OS
+.DS_Store
+
+# Environment files with secrets
+mu-online-web/.env.dev
+
+# Backups
+*.bak
+
+# SSH keys — never commit these
+*.pub
+yes
+yes.pub
+
+# Editor
+*.swp
+*.swo
+*~

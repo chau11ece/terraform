@@ -1,0 +1,54 @@
+# =============================================================================
+# MU Online Infrastructure - Your Values Go Here
+# RENAME this file to: terraform.tfvars
+# NEVER commit terraform.tfvars to git (it has secrets!)
+# =============================================================================
+
+# DigitalOcean API token
+# Get it from: https://cloud.digitalocean.com/account/api/tokens
+# do_token = "dop_v1_xxxxxxxxxxxxxxxxxxxx"   # Set via env instead — see README
+
+# Project settings
+project_name = "mu-online"
+environment  = "production"
+region       = "sgp1"  # Singapore — best latency from Vietnam
+
+# Droplet sizing
+# s-1vcpu-1gb  = $6/month  (fine for website-only)
+# s-2vcpu-4gb  = $24/month (MSSQL needs 2GB+ RAM)
+# s-4vcpu-8gb  = $48/month (Wine + all game servers)
+web_droplet_size  = "s-1vcpu-1gb"
+db_droplet_size   = "s-2vcpu-4gb"
+game_droplet_size = "s-4vcpu-8gb"
+db_volume_size    = 10             # $1/month — persistent MSSQL data
+game_volume_size  = 10             # $1/month — persistent game server files
+
+# Your domain (must be registered and nameservers pointed to DigitalOcean)
+domain_name = "danangmu.com"
+
+# Your local Windows VPS public IP (the machine running MSSQL + game servers)
+your_local_vps_ip = "1.54.153.162"
+
+# SSH key name (must already exist in your DO account)
+ssh_key_name = "mu-deploy-key"
+
+# IPs allowed to SSH into the droplet (CIDR format)
+# Include your VPS IP and your home/office IP
+ssh_allowed_ips = ["1.54.153.162/32"]  # <-- add your home IP too
+
+# =============================================================================
+# MU Database Connection (MSSQL 2022 in Docker on DB droplet)
+# mu_db_host is auto-set to the DB droplet's private IP by Terraform
+# =============================================================================
+mu_db_port = 1433
+mu_db_name = "MuOnline"
+
+# mu_db_user and mu_db_password — set via environment variables:
+#   export TF_VAR_mu_db_user="your_sql_user"
+#   export TF_VAR_mu_db_password="your_sql_password"
+
+# MU website container port (Docker maps this to port 80 inside the container)
+mu_website_port = 8080
+
+# Docker Hub username (used to pull the mu-web Linux image)
+docker_hub_username = "your_dockerhub_username"  # <-- CHANGE THIS

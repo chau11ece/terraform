@@ -1,0 +1,8 @@
+# Packer build artifacts
+manifest-*.json
+packer_cache/
+crash.log
+
+# Sensitive files (never commit tokens)
+*.auto.pkrvars.hcl
+variables.pkrvars.hcl
