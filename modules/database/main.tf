@@ -39,7 +39,7 @@ resource "digitalocean_volume" "mssql_data" {
 # -----------------------------------------------------------------------------
 resource "digitalocean_droplet" "db" {
   name       = "${var.project_name}-db-${var.environment}"
-  image      = var.web_droplet_image
+  image      = var.droplet_image
   size       = var.db_droplet_size
   region     = var.region
   vpc_uuid   = var.vpc_uuid

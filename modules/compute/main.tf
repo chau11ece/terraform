@@ -97,7 +97,7 @@ resource "digitalocean_droplet" "game" {
   count = var.enable_game_server ? 1 : 0
 
   name       = "${var.project_name}-game-${var.environment}"
-  image      = var.web_droplet_image
+  image      = var.game_droplet_image
   size       = var.game_droplet_size
   region     = var.region
   vpc_uuid   = var.vpc_uuid

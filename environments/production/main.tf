@@ -46,6 +46,38 @@ data "digitalocean_images" "ubuntu" {
 }
 
 # -----------------------------------------------------------------------------
+# Packer-built Custom Images (optional - set use_custom_images = true to enable)
+# -----------------------------------------------------------------------------
+variable "use_custom_images" {
+  description = "Use Packer-built custom images instead of Ubuntu"
+  type        = bool
+  default     = false
+}
+
+# Custom snapshot data sources
+data "digitalocean_image" "mu_web_base" {
+  count = var.use_custom_images ? 1 : 0
+  name  = "mu-web-base-*"
+}
+
+data "digitalocean_image" "mu_db_base" {
+  count = var.use_custom_images ? 1 : 0
+  name  = "mu-db-base-*"
+}
+
+data "digitalocean_image" "mu_game_base" {
+  count = var.use_custom_images ? 1 : 0
+  name  = "mu-game-base-*"
+}
+
+# Compute the image to use based on flag
+locals {
+  web_image  = var.use_custom_images ? data.digitalocean_image.mu_web_base[0].id : var.web_droplet_image
+  db_image   = var.use_custom_images ? data.digitalocean_image.mu_db_base[0].id : var.web_droplet_image
+  game_image = var.use_custom_images ? data.digitalocean_image.mu_game_base[0].id : var.web_droplet_image
+}
+
+# -----------------------------------------------------------------------------
 # Tags (must exist before firewalls reference them)
 # -----------------------------------------------------------------------------
 resource "digitalocean_tag" "roles" {
@@ -67,9 +99,9 @@ module "database" {
   db_tag_name          = digitalocean_tag.roles["db"].name
   db_droplet_size      = var.db_droplet_size
   db_volume_size       = var.db_volume_size
-  web_droplet_image    = var.web_droplet_image
+  droplet_image       = local.db_image
   mu_db_password       = var.mu_db_password
-  enable_provisioners  = var.enable_provisioners
+  enable_provisioners = var.enable_provisioners
 }
 
 # -----------------------------------------------------------------------------
@@ -94,7 +126,8 @@ module "compute" {
   web_droplet_count    = var.web_droplet_count
   web_droplet_size    = var.web_droplet_size
   game_droplet_size   = var.game_droplet_size
-  web_droplet_image   = var.web_droplet_image
+  web_droplet_image   = local.web_image
+  game_droplet_image = local.game_image
   game_volume_size    = var.game_volume_size
   
   mu_db_port          = var.mu_db_port

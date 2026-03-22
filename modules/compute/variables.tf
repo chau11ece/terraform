@@ -91,7 +91,13 @@ variable "game_droplet_size" {
 }
 
 variable "web_droplet_image" {
-  description = "OS image for droplets"
+  description = "OS image for web droplets"
+  type        = string
+  default     = "ubuntu-22-04-x64"
+}
+
+variable "game_droplet_image" {
+  description = "OS image for game droplets (can be Packer snapshot)"
   type        = string
   default     = "ubuntu-22-04-x64"
 }

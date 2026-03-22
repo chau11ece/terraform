@@ -57,6 +57,12 @@ variable "web_droplet_image" {
   default     = "ubuntu-22-04-x64"
 }
 
+variable "droplet_image" {
+  description = "OS image for database droplet (can be Packer snapshot)"
+  type        = string
+  default     = "ubuntu-22-04-x64"
+}
+
 # -----------------------------------------------------------------------------
 # Database Configuration (for user_data)
 # -----------------------------------------------------------------------------
