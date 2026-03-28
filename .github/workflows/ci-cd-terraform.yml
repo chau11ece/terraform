@@ -1,0 +1,192 @@
+name: CI/CD — terraform
+
+# =============================================================================
+# Week 12: Terraform Infrastructure Pipeline
+# Separate from app pipeline — infrastructure changes are rare and high-risk
+#
+# develop branch: plan only (safe to see what would change)
+# main branch:    plan → manual approval → apply
+# =============================================================================
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to target'
+        required: true
+        default: 'production'
+        type: choice
+        options: [production, staging, dev]
+      force_apply:
+        description: 'Skip plan review (use with caution!)'
+        required: false
+        default: false
+        type: boolean
+
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'terraform/**'
+      - '!terraform/**.md'        # README changes don't trigger infra runs
+      - '!terraform/**/.gitignore'
+
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'terraform/**'
+
+permissions:
+  contents: read
+  pull-requests: write            # allows posting plan output as PR comment
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: false       # NEVER cancel terraform mid-run
+
+jobs:
+  # ── 1. Validate ───────────────────────────────────────────────────────────
+  # Always runs — catches syntax errors before any cloud API calls
+  validate:
+    runs-on: ubuntu-latest        # Terraform runs fine on GitHub hosted runner
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Terraform format check
+        working-directory: terraform/environments/production
+        run: |
+          terraform fmt -check -recursive
+          echo "Format check passed"
+
+      - name: Terraform init (no backend — just downloads providers)
+        working-directory: terraform/environments/production
+        run: terraform init -backend=false
+        env:
+          TF_VAR_do_token: "placeholder"   # needed for init, not used
+
+      - name: Terraform validate
+        working-directory: terraform/environments/production
+        run: terraform validate
+        env:
+          TF_VAR_do_token: "placeholder"
+
+  # ── 2. Plan ───────────────────────────────────────────────────────────────
+  # Shows what would change — critical for reviewing before apply
+  plan:
+    needs: validate
+    runs-on: ubuntu-latest
+    outputs:
+      plan_exitcode: ${{ steps.plan.outputs.exitcode }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Terraform init (with real backend)
+        working-directory: terraform/environments/production
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Terraform plan
+        id: plan
+        working-directory: terraform/environments/production
+        run: |
+          terraform plan \
+            -out=tfplan \
+            -detailed-exitcode \
+            -var="do_token=$TF_VAR_do_token" \
+            -var="mu_db_password=$TF_VAR_mu_db_password" \
+            2>&1 | tee plan-output.txt
+
+          echo "exitcode=$?" >> $GITHUB_OUTPUT
+        env:
+          TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+          TF_VAR_mu_db_password: ${{ secrets.MU_DB_PASSWORD }}
+          TF_VAR_ssh_key_name: "mu-deploy-key"
+          TF_VAR_domain_name: "danangmu.com"
+        continue-on-error: true   # don't fail the job — we report via PR comment
+
+      - name: Post plan to PR comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('terraform/environments/production/plan-output.txt', 'utf8');
+            const truncated = plan.length > 60000 ? plan.substring(0, 60000) + '\n... (truncated)' : plan;
+            const exitcode = '${{ steps.plan.outputs.exitcode }}';
+            const status = exitcode === '0' ? '✓ No changes' : exitcode === '2' ? '⚠ Changes detected' : '✗ Plan failed';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Terraform Plan — ${status}\n\n<details><summary>Show plan</summary>\n\n\`\`\`hcl\n${truncated}\n\`\`\`\n</details>`
+            });
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: terraform/environments/production/tfplan
+          retention-days: 7       # plans expire — don't apply stale ones
+
+      - name: Fail if plan errored
+        if: steps.plan.outputs.exitcode == '1'
+        run: exit 1
+
+  # ── 3. Apply ──────────────────────────────────────────────────────────────
+  # Only runs on main branch, requires manual approval via GitHub Environments
+  apply:
+    needs: plan
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name != 'pull_request' &&
+      needs.plan.outputs.plan_exitcode == '2'
+    runs-on: ubuntu-latest
+    environment: terraform-production   # GitHub Environment with required reviewers
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.5"
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan-${{ github.sha }}
+          path: terraform/environments/production/
+
+      - name: Terraform init
+        working-directory: terraform/environments/production
+        run: terraform init
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.DO_SPACES_KEY }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.DO_SPACES_SECRET }}
+          TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+
+      - name: Terraform apply (using saved plan — no surprises)
+        working-directory: terraform/environments/production
+        run: terraform apply -auto-approve tfplan
+        env:
+          TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
+          TF_VAR_mu_db_password: ${{ secrets.MU_DB_PASSWORD }}
+
+      - name: Show outputs
+        working-directory: terraform/environments/production
+        run: terraform output
+        env:
+          TF_VAR_do_token: ${{ secrets.DO_API_TOKEN }}
