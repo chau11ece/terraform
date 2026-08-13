@@ -84,7 +84,7 @@ output "game_sync_command" {
 # -----------------------------------------------------------------------------
 output "vpc_info" {
   description = "VPC that all droplets share (enables private networking)"
-  value       = "${data.digitalocean_vpc.default.name} (${data.digitalocean_vpc.default.ip_range})"
+  value       = "${digitalocean_vpc.default.name} (${digitalocean_vpc.default.ip_range})"
 }
 
 output "account_droplet_limit" {

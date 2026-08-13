@@ -71,11 +71,17 @@ data "digitalocean_ssh_key" "deploy_key" {
   name = var.ssh_key_name
 }
 
-# 2. Default VPC — DO auto-creates one per region, we just look it up
-#    Before: droplets used implicit default VPC (no control)
-#    After:  explicitly reference it — makes networking visible and intentional
-data "digitalocean_vpc" "default" {
-  region = var.region
+# 2. VPC — explicitly managed instead of relying on DO's implicit per-region
+#    default. DO removes that implicit VPC once a region has zero resources
+#    left in it, which breaks the old `data "digitalocean_vpc"` lookup on any
+#    from-scratch rebuild (hit this exact failure recreating sgp1 resources).
+resource "digitalocean_vpc" "default" {
+  name     = "default-${var.region}"
+  region   = var.region
+  # DO auto-provisioned this the instant the first sgp1 resource (a volume/LB)
+  # was created mid-apply, before this resource block ran — imported below
+  # rather than created, so the ip_range must match what DO actually assigned.
+  ip_range = "10.104.0.0/20"
 }
 
 # 3. Account info — check your droplet limit before trying to create
@@ -94,9 +100,14 @@ data "digitalocean_images" "ubuntu" {
     key    = "status"
     values = ["available"]
   }
-  sort {
-    key       = "created"
-    direction = "desc"
+  # distribution=Ubuntu + type=base still isn't enough to isolate the
+  # standard server image — DO's GPU-droplet base images (slug gpu-*-base)
+  # are also distribution=Ubuntu, type=base, and get created/refreshed more
+  # recently, so they sort ahead of the real ubuntu-24-04-x64 base image.
+  # Pin the slug directly instead of trusting "sort by newest" here.
+  filter {
+    key    = "slug"
+    values = ["ubuntu-24-04-x64"]
   }
 }
 
@@ -124,7 +135,7 @@ resource "digitalocean_droplet" "web" {
   image    = var.web_droplet_image
   size     = var.web_droplet_size
   region   = var.region
-  vpc_uuid = data.digitalocean_vpc.default.id  # ← data source: explicit VPC
+  vpc_uuid = digitalocean_vpc.default.id
   ssh_keys = [data.digitalocean_ssh_key.deploy_key.id]
 
   # Cloud-init script — runs once on first boot
@@ -187,7 +198,7 @@ resource "digitalocean_droplet" "game" {
   image      = var.web_droplet_image
   size       = var.game_droplet_size
   region     = var.region
-  vpc_uuid   = data.digitalocean_vpc.default.id  # ← data source: explicit VPC
+  vpc_uuid   = digitalocean_vpc.default.id
   ssh_keys   = [data.digitalocean_ssh_key.deploy_key.id]
   volume_ids = [digitalocean_volume.game_data.id]
 
@@ -424,7 +435,7 @@ resource "digitalocean_droplet" "db" {
   image      = var.web_droplet_image
   size       = var.db_droplet_size
   region     = var.region
-  vpc_uuid   = data.digitalocean_vpc.default.id
+  vpc_uuid   = digitalocean_vpc.default.id
   ssh_keys   = [data.digitalocean_ssh_key.deploy_key.id]
   volume_ids = [digitalocean_volume.mssql_data.id]
 
